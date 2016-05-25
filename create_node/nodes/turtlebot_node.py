@@ -240,7 +240,9 @@ class TurtlebotNode(object):
             angular = self.min_abs_yaw_vel if angular > 0.0 else -self.min_abs_yaw_vel
         # Limit maximum yaw to avoid saturating the gyro
         if self.max_abs_yaw_vel is not None and self.max_abs_yaw_vel > 0.0 and angular != 0.0 and abs(angular) > self.max_abs_yaw_vel: 
-            angular = self.max_abs_yaw_vel if angular > 0.0 else -self.max_abs_yaw_vel         
+            angular = self.max_abs_yaw_vel if angular > 0.0 else -self.max_abs_yaw_vel 
+            
+        return angular
             
     def cmd_vel_twist(self, msg):
         msg.angular.z = self.trim_angular(msg.angular.z)
