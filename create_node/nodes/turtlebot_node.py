@@ -179,13 +179,13 @@ class TurtlebotNode(object):
         self.digital_output_srv = rospy.Service('~set_digital_outputs', SetDigitalOutputs, self.set_digital_outputs)
 
         if self.drive_mode == 'twist':
-            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Twist, self.cmd_vel)
+            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Twist, self.cmd_vel_twist)
             self.drive_cmd = self.robot.direct_drive
         elif self.drive_mode == 'drive':
-            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Drive, self.cmd_vel)
+            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Drive, self.cmd_vel_drive)
             self.drive_cmd = self.robot.drive
         elif self.drive_mode == 'turtle':
-            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Turtle, self.cmd_vel)
+            self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Turtle, self.cmd_vel_turtle)
             self.drive_cmd = self.robot.direct_drive
         else:
             rospy.logerr("unknown drive mode :%s"%(self.drive_mode))
@@ -208,14 +208,43 @@ class TurtlebotNode(object):
         self.max_abs_yaw_vel = config['max_abs_yaw_vel']
         return config
 
-    def cmd_vel(self, msg):
-        # Clamp to min abs yaw velocity, to avoid trying to rotate at low
-        # speeds, which doesn't work well.
-        if self.min_abs_yaw_vel is not None and msg.angular.z != 0.0 and abs(msg.angular.z) < self.min_abs_yaw_vel:
-            msg.angular.z = self.min_abs_yaw_vel if msg.angular.z > 0.0 else -self.min_abs_yaw_vel
+    #def cmd_vel(self, msg):
+        ## Clamp to min abs yaw velocity, to avoid trying to rotate at low
+        ## speeds, which doesn't work well.
+        #if self.min_abs_yaw_vel is not None and msg.angular.z != 0.0 and abs(msg.angular.z) < self.min_abs_yaw_vel:
+            #msg.angular.z = self.min_abs_yaw_vel if msg.angular.z > 0.0 else -self.min_abs_yaw_vel
+        ## Limit maximum yaw to avoid saturating the gyro
+        #if self.max_abs_yaw_vel is not None and self.max_abs_yaw_vel > 0.0 and msg.angular.z != 0.0 and abs(msg.angular.z) > self.max_abs_yaw_vel: 
+            #msg.angular.z = self.max_abs_yaw_vel if msg.angular.z > 0.0 else -self.max_abs_yaw_vel 
+        #if self.drive_mode == 'twist':
+            ## convert twist to direct_drive args
+            #ts  = msg.linear.x * 1000 # m -> mm
+            #tw  = msg.angular.z  * (robot_types.ROBOT_TYPES[self.robot_type].wheel_separation / 2) * 1000 
+            ## Prevent saturation at max wheel speed when a compound command is sent.
+            #if ts > 0:
+                #ts = min(ts,   MAX_WHEEL_SPEED - abs(tw))
+            #else:
+                #ts = max(ts, -(MAX_WHEEL_SPEED - abs(tw)))
+            #self.req_cmd_vel = int(ts - tw), int(ts + tw)
+        #elif self.drive_mode == 'turtle':
+            ## convert to direct_drive args
+            #ts  = msg.linear * 1000 # m -> mm
+            #tw  = msg.angular  * (robot_types.ROBOT_TYPES[self.robot_type].wheel_separation / 2) * 1000 
+            #self.req_cmd_vel = int(ts - tw), int(ts + tw)
+        #elif self.drive_mode == 'drive':
+            ## convert twist to drive args, m->mm (velocity, radius)
+            #self.req_cmd_vel = msg.velocity * 1000, msg.radius * 1000
+            
+    def trim_angular(self, angular):
+        if self.min_abs_yaw_vel is not None and angular != 0.0 and abs(angular) < self.min_abs_yaw_vel:
+            angular = self.min_abs_yaw_vel if angular > 0.0 else -self.min_abs_yaw_vel
         # Limit maximum yaw to avoid saturating the gyro
-        if self.max_abs_yaw_vel is not None and self.max_abs_yaw_vel > 0.0 and msg.angular.z != 0.0 and abs(msg.angular.z) > self.max_abs_yaw_vel: 
-            msg.angular.z = self.max_abs_yaw_vel if msg.angular.z > 0.0 else -self.max_abs_yaw_vel 
+        if self.max_abs_yaw_vel is not None and self.max_abs_yaw_vel > 0.0 and angular != 0.0 and abs(angular) > self.max_abs_yaw_vel: 
+            angular = self.max_abs_yaw_vel if angular > 0.0 else -self.max_abs_yaw_vel         
+            
+    def cmd_vel_twist(self, msg):
+        msg.angular.z = self.trim_angular(self, msg.angular.z)
+        
         if self.drive_mode == 'twist':
             # convert twist to direct_drive args
             ts  = msg.linear.x * 1000 # m -> mm
@@ -226,14 +255,18 @@ class TurtlebotNode(object):
             else:
                 ts = max(ts, -(MAX_WHEEL_SPEED - abs(tw)))
             self.req_cmd_vel = int(ts - tw), int(ts + tw)
-        elif self.drive_mode == 'turtle':
-            # convert to direct_drive args
-            ts  = msg.linear * 1000 # m -> mm
-            tw  = msg.angular  * (robot_types.ROBOT_TYPES[self.robot_type].wheel_separation / 2) * 1000 
-            self.req_cmd_vel = int(ts - tw), int(ts + tw)
-        elif self.drive_mode == 'drive':
-            # convert twist to drive args, m->mm (velocity, radius)
-            self.req_cmd_vel = msg.velocity * 1000, msg.radius * 1000
+            
+    def cmd_vel_turtle(self, msg):
+        msg.angular = self.trim_angular(self.msg.angular)
+        
+        # convert to direct_drive args
+        ts  = msg.linear * 1000 # m -> mm
+        tw  = msg.angular  * (robot_types.ROBOT_TYPES[self.robot_type].wheel_separation / 2) * 1000 
+        self.req_cmd_vel = int(ts - tw), int(ts + tw)
+
+    def cmd_vel_drive(self, msg):
+        # convert twist to drive args, m->mm (velocity, radius)
+        self.req_cmd_vel = msg.velocity * 1000, msg.radius * 1000
 
     def set_operation_mode(self,req):
         if not self.robot.sci:
