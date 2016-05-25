@@ -243,7 +243,7 @@ class TurtlebotNode(object):
             angular = self.max_abs_yaw_vel if angular > 0.0 else -self.max_abs_yaw_vel         
             
     def cmd_vel_twist(self, msg):
-        msg.angular.z = self.trim_angular(self, msg.angular.z)
+        msg.angular.z = self.trim_angular(msg.angular.z)
         
         if self.drive_mode == 'twist':
             # convert twist to direct_drive args
@@ -257,7 +257,7 @@ class TurtlebotNode(object):
             self.req_cmd_vel = int(ts - tw), int(ts + tw)
             
     def cmd_vel_turtle(self, msg):
-        msg.angular = self.trim_angular(self.msg.angular)
+        msg.angular = self.trim_angular(msg.angular)
         
         # convert to direct_drive args
         ts  = msg.linear * 1000 # m -> mm
